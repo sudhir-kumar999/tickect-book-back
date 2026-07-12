@@ -27,5 +27,4 @@ AppDataSource.initialize()
         });
     })
     .catch((err) => {
-        console.log("DB ERROR",err);
     });
