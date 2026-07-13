@@ -10,6 +10,8 @@ import { getDistance } from "../utils/getDistance";
 import { Theatre } from "../entity/Theatre";
 import { Booking } from "../entity/Booking";
 import { Seat } from "../entity/Seat";
+import { razorPay } from "../utils/razorPay";
+import crypto from "node:crypto";
 interface payloadData{
 id:string
 name:string
@@ -102,7 +104,6 @@ export const registerUser = async (req: Request, res: Response) => {
 export const loginUser = async (req: Request, res: Response) => {
     try {
         let { email,password } = req.body;
-        // const {password}=req.body;
         if (!email || !password) {
             return res.status(401).json({
                 success: false,
@@ -187,17 +188,22 @@ export const movieList=async(req:RequestWithUser,res:Response)=>{
         if(!userData){
             return res.status(401).json({
                 success:false,
-                message:"you are not admin"
+                message:"you are not user"
             });
         }
-        const shows=await showRepo.find({
+        const shows = await showRepo.find({
             relations: {
-                movie: true
-            }
+                movie: true,
+            },
         });
-        const movies = shows.map(show => show.movie);
-        const uniqueMovies = movies.filter((movie, index, self) =>
-            index === self.findIndex((m) => m.id === movie.id)
+
+        const movies = shows
+            .map(show => show.movie)
+            .filter((movie): movie is Movie => movie !== null);
+
+        const uniqueMovies = movies.filter(
+            (movie, index, self) =>
+                index === self.findIndex((m) => m.id === movie.id)
         );
         return res.status(200).json({
             success: true,
@@ -369,20 +375,23 @@ export const getShowByTheatre=async(req:RequestWithUser,res:Response)=>{
                 message:"No movie found with provided id"
             });
         }
-        const shows=await showRepo.find({
-            where:{
-                movie:{
-                    id:movieId as string
+        const shows = await showRepo.find({
+            where: {
+                movie: {
+                    id: movieId as string,
                 },
-                theatre:{
-                    id:theatreId as string
+                theatre: {
+                    id: theatreId as string,
                 },
-                showDate:MoreThanOrEqual(new Date().toISOString().split("T")[0] as string)
+                showDate: MoreThanOrEqual(
+            new Date().toISOString().split("T")[0]!
+                ),
+                isCancel: false,
             },
-            order:{
-                showDate:"ASC",
-                showStartTime:"ASC",
-            }
+            order: {
+                showDate: "ASC",
+                showStartTime: "ASC",
+            },
         });
         if(shows.length==0){
             return res.status(404).json({
@@ -563,7 +572,7 @@ export const toggleSeat=async(req:RequestWithUser,res:Response)=>{
                     status:"held"
                 }
             });
-            if(heldCount>5){
+            if(heldCount>=5){
                 return res.status(400).json({
                     success:false,
                     message:"only 5 seat can held at a time"
@@ -636,13 +645,12 @@ export const ticketBoking=async(req:RequestWithUser,res:Response)=>{
                 message:"No login user found"
             });
         }
-        const {showId,seatId}=req.body;
-        // const{seatId}=req.body;
+        const {showId,seatId,amount}=req.body;
         const userId=req.user.id;
         if(!showId){
             return res.status(401).json({
                 success:false,
-                message:"No seat id found"
+                message:"No show id found"
             });
         }
         if(!seatId){
@@ -688,7 +696,7 @@ export const ticketBoking=async(req:RequestWithUser,res:Response)=>{
                 seat:true
             }
         });
-
+        // console.log(bookings);
         if (bookings.length !== seatId.length) {
             return res.status(400).json({
                 success: false,
@@ -721,10 +729,17 @@ export const ticketBoking=async(req:RequestWithUser,res:Response)=>{
             });
         }
 
+        const order=await razorPay.orders.create({
+            amount:Number(amount)*100,
+            currency:"INR"
+        });
+
         const bookingIds = bookings.map((ele) => ele.id);
         await bookingRepo.update(
             { id: In(bookingIds) },
-            { status: "booked"}
+            { 
+                razor_pay_order_id:order.id,
+                paymentStatus: "pending"}
         );
 
         const totalAmount = bookings.reduce((sum, b) => {
@@ -735,8 +750,150 @@ export const ticketBoking=async(req:RequestWithUser,res:Response)=>{
         return res.status(200).json({
             success: true,
             message: "Booking confirmed successfully",
+            order,
             bookingIds,
             totalAmount,
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || "internal server error",
+            });
+        }
+    }
+};
+
+export const bookingHistory=async(req:RequestWithUser,res:Response)=>{
+    try {
+        if(!req.user){
+            return res.status(401).json({
+                success:false,
+                message:"No Logged in user found"
+            });
+        }
+        const bookings=await bookingRepo.find({
+            where:{
+                user:{
+                    id:req.user.id
+                },
+                status:"booked"
+            },
+            relations:{
+                seat:true,
+                show:true
+            }
+        });
+        if(bookings.length==0){
+            return res.status(404).json({
+                success:false,
+                message:"No booking found"
+            });
+        }
+        return res.status(200).json({
+            success:true,
+            message:"Booked History Fetched.",
+            data:bookings
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || "internal server error",
+            });
+        }
+    }
+};
+
+export const verifyPayment=async(req:RequestWithUser,res:Response)=>{
+    try {
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body.paymentDetails;
+        const generated_signature = crypto
+            .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET as string)
+            .update(razorpay_order_id + "|" + razorpay_payment_id)
+            .digest("hex");
+        if (generated_signature === razorpay_signature) {
+            await bookingRepo.update({
+                razor_pay_order_id:razorpay_order_id
+            },{
+                paymentStatus:"paid",
+                status:"booked",
+                paymentId:razorpay_payment_id,
+                razor_pay_signature:razorpay_signature
+            });
+            res.status(200).json({ success: true, message: "Payment verified!" });
+        } else {
+            res.status(400).json({ success: false, message: "Payment verification failed!" });
+        }
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || "internal server error",
+            });
+        }
+    }
+};
+
+export const dashboardData=async(req:RequestWithUser,res:Response)=>{
+    try {
+        if(!req.user){
+            return res.status(401).json({
+                success:false,
+                message:"No Logged in user found"
+            });
+        }
+        const user = await userRepo.findOne({
+            where: {
+                id: req.user.id,
+                role: "user",
+            },
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const bookings = await bookingRepo.find({
+            where: {
+                user: {
+                    id: user.id,
+                },
+                paymentStatus: "paid",
+            },
+            relations: {
+                show: true,
+                seat: true,
+            },
+        });
+        const now = new Date();
+        const upcomingShows = bookings.filter((booking) => {
+            if (booking.show.isCancel) return false;
+            const showDateTime = new Date(
+                `${booking.show.showDate}T${booking.show.showStartTime}:00`
+            );
+            return showDateTime > now;
+        });
+        const totalSpent = bookings.reduce((sum, booking) => {
+            return (
+                sum +
+                (booking.seat.seatType === "Premium"
+                    ? booking.show.prem_Price
+                    : booking.show.reg_Price)
+            );
+        }, 0);
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                name: user.name,
+                totalBookings: bookings.length,
+                totalSpent,
+                upcomingShows: upcomingShows.length,
+            },
         });
     } catch (error) {
         if (error instanceof Error) {

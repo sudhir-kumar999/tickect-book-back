@@ -28,6 +28,9 @@ export class Show{
     @Column()
         prem_Price!:number;
 
+    @Column({default: false})
+        isCancel!: boolean;
+
     @ManyToOne(()=>Movie,(movie)=>movie.show)
         movie!:Movie;
 

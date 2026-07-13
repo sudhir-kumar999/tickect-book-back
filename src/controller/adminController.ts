@@ -8,6 +8,7 @@ import axios from "axios";
 import { Movie } from "../entity/Movie";
 import { Show } from "../entity/Show";
 import { LessThan, MoreThan } from "typeorm";
+import { Booking } from "../entity/Booking";
 interface payloadData{
 id:string
 name:string
@@ -23,6 +24,7 @@ const theatreRepo=AppDataSource.getRepository(Theatre);
 const movieRepo=AppDataSource.getRepository(Movie);
 const seatRepo=AppDataSource.getRepository(Seat);
 const showRepo=AppDataSource.getRepository(Show);
+const bookingRepo=AppDataSource.getRepository(Booking);
 const stringRegex = /^[A-Za-z ]+$/;
 
 export const adminLogin = async (req: Request, res: Response) => {
@@ -225,9 +227,10 @@ export const searchMovie=async(req:RequestWithUser,res:Response)=>{
                 message:"No query found to search movie"
             });
         }
-
-        const response=await axios.get("https://api.themoviedb.org/3/search/movie",{
-            params:{api_key:"91de401eef2d1e423503c9a061cb82a4",query}
+        const TMDB_LINK=process.env.TMDB_LINK;
+        const TMDB_API_KEY=process.env.TMDB_API_KEY;
+        const response=await axios.get(`${TMDB_LINK}/search/movie`,{
+            params:{api_key:`${TMDB_API_KEY}`,query}
         });
         if(!response.data.results){
             return res.status(400).json({
@@ -305,14 +308,14 @@ export const addMovie=async(req:RequestWithUser,res:Response)=>{
             title:data.title,
             description:data.overview,
             duration:data.runtime,
-            poster:data.poster_path,
+            poster:data?.poster_path,
             releaseDate:data.release_date,
             rating:data?.vote_average
         };
         const savedMovie=await movieRepo.save(movieData);
         return res.status(200).json({
             success:true,
-            message:"movie fetched",
+            message:"movie added",
             data:savedMovie
         });
     } catch (error) {
@@ -455,7 +458,6 @@ export const createShow=async(req:RequestWithUser,res:Response)=>{
             });
         }
 
-        // const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
         const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
         if (!timeRegex.test(showStartTime)) {
             return res.status(400).json({
@@ -656,5 +658,343 @@ export const showList=async(req:RequestWithUser,res:Response)=>{
                 message: error.message || "internal server error",
             });
         }
+    }
+};
+
+export const allBookings=async(req:RequestWithUser,res:Response)=>{
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "No logged in user found",
+            });
+        }
+        const admin = await userRepo.findOne({
+            where: {
+                id: req.user.id,
+                role: "admin",
+            },
+        });
+
+        if (!admin) {
+            return res.status(403).json({
+                success: false,
+                message: "Only admin can access all booking data",
+            });
+        }
+        const bookings=await bookingRepo.find({
+            where:{
+                status:"booked"
+            },
+            relations:{
+                user:true,
+                seat:true,
+                show:true
+            }
+        });
+        if(bookings.length==0){
+            return res.status(404).json({
+                success:false,
+                message:"No booking found"
+            });
+        }
+        return res.status(200).json({
+            success:true,
+            message:"Booked History Fetched.",
+            data:bookings
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || "internal server error",
+            });
+        }
+    }
+};
+
+export const changeShowTime=async(req:RequestWithUser,res:Response)=>{
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "No logged in user found",
+            });
+        }
+        const admin = await userRepo.findOne({
+            where: {
+                id: req.user.id,
+                role: "admin",
+            },
+        });
+
+        if (!admin) {
+            return res.status(403).json({
+                success: false,
+                message: "Only admin can access all booking data",
+            });
+        }
+        const {showId,showDate,showStartTime,showEndTime}=req.body;
+        if(!showId){
+            return res.status(400).json({
+                success: false,
+                message: "Provide show id"
+            });
+        }
+        if (!showDate || typeof showDate !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Provide show date"
+            });
+        }
+
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(showDate)) {
+            return res.status(400).json({
+                success: false,
+                message: "Show date must be in YYYY-MM-DD format"
+            });
+        }
+
+        if (!showStartTime || typeof showStartTime !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Provide show start time"
+            });
+        }
+
+        if (!showEndTime || typeof showEndTime !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Provide show end time"
+            });
+        }
+
+        const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+        if (!timeRegex.test(showStartTime)) {
+            return res.status(400).json({
+                success: false,
+                message: "Start time must be in HH:mm format"
+            });
+        }
+
+        if (!timeRegex.test(showEndTime)) {
+            return res.status(400).json({
+                success: false,
+                message: "End time must be in HH:mm format"
+            });
+        }
+
+        if (showStartTime === showEndTime) {
+            return res.status(400).json({
+                success: false,
+                message: "Show end time must be after show start time"
+            });
+        }
+        if (showStartTime >= showEndTime) {
+            return res.status(400).json({
+                success: false,
+                message: "End time must be after start time and overnight shows are not allowed"
+            });
+        }
+        const today = new Date().toISOString().split("T")[0]!;
+        if (showDate < today) {
+            return res.status(400).json({
+                success: false,
+                message: "Show date cannot be in the past"
+            });
+        }
+        const existingShow=await showRepo.findOne({
+            where:{
+                id:showId,
+            }
+        });
+
+        if(!existingShow){
+            return res.status(409).json({
+                success:false,
+                message:"No any show scheduled at ths time"
+            });
+        }
+
+        existingShow.showDate = showDate;
+        existingShow.showStartTime = showStartTime;
+        existingShow.showEndTime = showEndTime;
+        const showData=await showRepo.save(existingShow);
+        return res.status(201).json({
+            success:true,
+            message:"Show created successfully",
+            data:showData
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || "internal server error",
+            });
+        }
+    }
+};
+
+export const cancelShow=async(req:RequestWithUser,res:Response)=>{
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "No logged in user found",
+            });
+        }
+        const admin = await userRepo.findOne({
+            where: {
+                id: req.user.id,
+                role: "admin",
+            },
+        });
+
+        if (!admin) {
+            return res.status(403).json({
+                success: false,
+                message: "Only admin can access all booking data",
+            });
+        }
+        const {showId}=req.body;
+        if(!showId){
+            return res.status(400).json({
+                success: false,
+                message: "Provide show id"
+            });
+        }
+        const show=await showRepo.findOne({
+            where:{
+                id:showId,
+            }
+        });
+
+        if(!show){
+            return res.status(409).json({
+                success:false,
+                message:"No any show found with given show id"
+            });
+        }
+        const showStartDateTime = new Date(
+            `${show.showDate}T${show.showStartTime}:00`
+        );
+
+        const now = new Date();
+        if (showStartDateTime <= now) {
+            return res.status(400).json({
+                success: false,
+                message: "Running or completed shows cannot be cancelled.",
+            });
+        }
+
+        const bookingCount = await bookingRepo.count({
+            where: {
+                show: {
+                    id: showId,
+                },
+            },
+        });
+
+        if (bookingCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: "This show already has bookings and cannot be cancelled.",
+            });
+        }
+        if (show.isCancel) {
+            return res.status(400).json({
+                success: false,
+                message: "Show is already cancelled.",
+            });
+        }
+        show.isCancel = true;
+        await showRepo.save(show);
+        return res.status(200).json({
+            success: true,
+            message: "Show cancelled successfully.",
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({
+                success: false,
+                message: error.message || "internal server error",
+            });
+        }
+    }
+};
+
+export const adminDashboard = async (req: RequestWithUser,res: Response) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "No logged in user found",
+            });
+        }
+
+        const admin = await userRepo.findOne({
+            where: {
+                id: req.user.id,
+                role: "admin",
+            },
+        });
+
+        if (!admin) {
+            return res.status(403).json({
+                success: false,
+                message: "Only admin can see dashboard",
+            });
+        }
+
+        const totalMovies = await movieRepo.count();
+        const totalTheatres = await theatreRepo.count();
+        const totalShows = await showRepo.count();
+        const totalUsers = await userRepo.count({
+            where: {
+                role: "user",
+            },
+        });
+
+        const bookings = await bookingRepo.find({
+            where: {
+                paymentStatus: "paid",
+            },
+            relations: {
+                show: true,
+                seat: true,
+            },
+        });
+        const totalBookings = bookings.length;
+        let totalCollection = 0;
+        for (const booking of bookings) {
+            if (booking.seat.seatType === "Premium") {
+                totalCollection += booking.show.prem_Price;
+            } else {
+                totalCollection += booking.show.reg_Price;
+            }
+        }
+        return res.status(200).json({
+            success: true,
+            data: {
+                totalMovies,
+                totalTheatres,
+                totalShows,
+                totalUsers,
+                totalBookings,
+                totalCollection,
+            },
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            return res.status(500).json({
+                success: false,
+                message: error.message,
+            });
+        }
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
     }
 };

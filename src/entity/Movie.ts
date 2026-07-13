@@ -15,7 +15,7 @@ export class Movie{
     @Column({nullable:true})
         duration!:number;
 
-    @Column()
+    @Column({nullable:true})
         poster!:string;
 
     @Column({nullable:true})

@@ -34,6 +34,15 @@ export class Booking {
     @Column({ nullable: true })
         paymentId!: string;
 
+    @Column({ nullable: true })
+        paymentStatus!: string;
+
+    @Column({ nullable: true })
+        razor_pay_order_id!: string;
+
+    @Column({ nullable: true })
+        razor_pay_signature!: string;
+
     @CreateDateColumn()
         createdAt!: Date;
 }
