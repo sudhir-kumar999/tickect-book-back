@@ -48,7 +48,7 @@ Admin can see all the list of created show they can change their show time and a
 - RazorPay
 
 ## Frontend Structure
-
+```
 ticket-bookin-front.git/
 ├── .gitignore
 ├── README.md
@@ -101,9 +101,10 @@ ticket-bookin-front.git/
 ├── tsconfig.node.json
 ├── vercel.json
 └── vite.config.ts
-
+```
 
 ## Backend structure
+```
 tickect-book-back.git/
 ├── .gitignore
 ├── eslint.config.mjs
@@ -140,7 +141,7 @@ tickect-book-back.git/
 │       ├── types.ts
 │       └── verifyToken.ts
 └── tsconfig.json
-
+```
 
 ## env variables for backend
 - PORT=Enter your posrt number
