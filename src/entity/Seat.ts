@@ -12,6 +12,9 @@ export class Seat{
     @Column()
         row!:string;
 
+    @Column({nullable:true})
+        price!:number;
+
     @Column({default:"Regular"})
         seatType!:string;
 

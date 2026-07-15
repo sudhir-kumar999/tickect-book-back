@@ -22,11 +22,11 @@ export class Show{
     @Column()
         total_seat!:number;
 
-    @Column()
-        reg_Price!:number;
+    // @Column()
+    //     reg_Price!:number;
 
-    @Column()
-        prem_Price!:number;
+    // @Column()
+    //     prem_Price!:number;
 
     @Column({default: false})
         isCancel!: boolean;

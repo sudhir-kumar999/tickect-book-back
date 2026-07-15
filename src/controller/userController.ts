@@ -473,7 +473,8 @@ export const seatDetails=async(req:RequestWithUser,res:Response)=>{
                 seatNumber: seat.seatNumber,
                 row: seat.row,
                 seatType: seat.seatType,
-                price: seat.seatType === "Premium" ? show.prem_Price : show.reg_Price,
+                price:seat.price,
+                // price: seat.seatType === "Premium" ? show.prem_Price : show.reg_Price,
                 status: booking ? booking.status : "available",
                 heldByMe: booking?.status === "held" && booking.user.id === userId,
             };
@@ -742,17 +743,17 @@ export const ticketBoking=async(req:RequestWithUser,res:Response)=>{
                 paymentStatus: "pending"}
         );
 
-        const totalAmount = bookings.reduce((sum, b) => {
-            const price = b.seat.seatType === "Premium" ? show.prem_Price : show.reg_Price;
-            return sum + Number(price);
-        }, 0);
+        // const totalAmount = bookings.reduce((sum, b) => {
+        // const price = b.seat.seatType === "Premium" ? show.prem_Price : show.reg_Price;
+        // return sum + Number(price);
+        // }, 0);
 
         return res.status(200).json({
             success: true,
             message: "Booking confirmed successfully",
             order,
             bookingIds,
-            totalAmount,
+            // totalAmount,
         });
     } catch (error) {
         if (error instanceof Error) {
@@ -881,8 +882,8 @@ export const dashboardData=async(req:RequestWithUser,res:Response)=>{
             return (
                 sum +
                 (booking.seat.seatType === "Premium"
-                    ? booking.show.prem_Price
-                    : booking.show.reg_Price)
+                    ? booking.seat.price
+                    : booking.seat.price)
             );
         }, 0);
 

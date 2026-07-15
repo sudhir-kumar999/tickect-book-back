@@ -18,6 +18,12 @@ role:string
 interface RequestWithUser extends Request{
     user?:payloadData
 }
+interface Seats{
+    seatType:string
+    rows:number
+    columns:number
+    price:number
+}
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const userRepo = AppDataSource.getRepository(User);
 const theatreRepo=AppDataSource.getRepository(Theatre);
@@ -115,15 +121,15 @@ export const createTheatre=async(req:RequestWithUser,res:Response)=>{
                 message:"No Logged in user found"
             });
         }
-        const {latitude,longitude}=req.body;
+        const {latitude,longitude,seatMap}=req.body;
         let {name,address}=req.body;
+        
         const adminData=await userRepo.findOne({
             where:{
                 id:req.user.id,
                 role:"admin"
             }
         });
-
         if(!adminData){
             return res.status(401).json({
                 success:false,
@@ -167,20 +173,41 @@ export const createTheatre=async(req:RequestWithUser,res:Response)=>{
             latitude,
             longitude
         };
+        const allRowNo=seatMap.reduce((acc:number,seat:Seats)=>acc+seat.rows,0);
+        const totalSeat=seatMap.reduce((acc:number,seat:Seats)=>acc+(seat.rows*seat.columns),0);
+        if(allRowNo>26){
+            return res.status(400).json({
+                success:false,
+                message:"Row can only be 26"
+            });
+        }
+        if(totalSeat>1000){
+            return res.status(400).json({
+                success:false,
+                message:"Seat maximum allowed up to 1000"
+            });
+        }
         const savedData=await theatreRepo.save(theatreData);
+        seatMap.sort((a: Seats, b: Seats) => a.price - b.price);
         const seatData=[];
-        const row:number=6;
-        for(let i=0;i<row;i++){
-            const rowLetter=String.fromCharCode(65+i);
-            for(let j=1;j<=10;j++){
-                seatData.push({
-                    theatre:{
-                        id:savedData.id,
-                    },
-                    row:rowLetter,
-                    seatNumber:`${rowLetter}${j}`,
-                    seatType:i<2?"Premium":"Regular"
-                });
+        let rowIndex=0;
+        for(let k=0;k<seatMap.length;k++){
+            const row:number=seatMap[k].rows;
+            const column=seatMap[k].columns;
+            for(let i=0;i<row;i++){
+                const rowLetter=String.fromCharCode(65+rowIndex);
+                for(let j=1;j<=column;j++){
+                    seatData.push({
+                        theatre:{
+                            id:savedData.id,
+                        },
+                        row:rowLetter,
+                        seatNumber:`R${rowLetter}${j}`,
+                        seatType:seatMap[k].seatType,
+                        price:seatMap[k].price
+                    });
+                }
+                rowIndex++;
             }
         }
         const seats=await seatRepo.save(seatData);
@@ -189,6 +216,7 @@ export const createTheatre=async(req:RequestWithUser,res:Response)=>{
             message:"Theatre with seats created successfully",
             data:savedData,
             seats:seats
+            // seats:seatData
         });
     } catch (error) {
         if (error instanceof Error) {
@@ -374,6 +402,209 @@ export const getAllMovie=async(req:RequestWithUser,res:Response)=>{
     }
 };
 
+// export const createShow=async(req:RequestWithUser,res:Response)=>{
+//     try {
+//         if(!req.user){
+//             return res.status(401).json({
+//                 success:false,
+//                 message:"No Logged in user found"
+//             });
+//         }
+//         const adminData=await userRepo.findOne({
+//             where:{
+//                 id:req.user.id,
+//                 role:"admin"
+//             }
+//         });
+//         if(!adminData){
+//             return res.status(401).json({
+//                 success:false,
+//                 message:"you are not admin"
+//             });
+//         }
+//         const {movieId,theatreId,reg_Price,prem_Price,name,showDate,showStartTime,showEndTime}=req.body;
+//         if (!name || typeof name !== "string" || name.trim().length < 2) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide a valid show name"
+//             });
+//         }
+//         if(!theatreId){
+//             return res.status(400).json({
+//                 success:false,
+//                 message:"Provide theatre id"
+//             });
+//         }
+//         if (!movieId || typeof movieId !== "string") {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide a valid movie id"
+//             });
+//         }
+//         if (
+//             reg_Price === undefined || isNaN(Number(reg_Price)) || Number(reg_Price) <= 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide a regular seat price"
+//             });
+//         }
+
+//         if (
+//             prem_Price === undefined || isNaN(Number(prem_Price)) || Number(prem_Price) <= 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide a premium seat price"
+//             });
+//         }
+
+//         if (!showDate || typeof showDate !== "string") {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide show date"
+//             });
+//         }
+
+//         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+//         if (!dateRegex.test(showDate)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Show date must be in YYYY-MM-DD format"
+//             });
+//         }
+
+//         if (!showStartTime || typeof showStartTime !== "string") {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide show start time"
+//             });
+//         }
+
+//         if (!showEndTime || typeof showEndTime !== "string") {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Provide show end time"
+//             });
+//         }
+
+//         const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+//         if (!timeRegex.test(showStartTime)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Start time must be in HH:mm format"
+//             });
+//         }
+
+//         if (!timeRegex.test(showEndTime)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "End time must be in HH:mm format"
+//             });
+//         }
+
+//         if (showStartTime === showEndTime) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Show end time must be after show start time"
+//             });
+//         }
+//         if (showStartTime >= showEndTime) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "End time must be after start time and overnight shows are not allowed"
+//             });
+//         }
+//         if (Number(prem_Price) < Number(reg_Price)) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Premium price cannot be less than regular price"
+//             });
+//         }
+//         const today = new Date().toISOString().split("T")[0]!;
+//         if (showDate < today) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: "Show date cannot be in the past"
+//             });
+//         }
+
+//         const checkTheatre=await theatreRepo.findOne({
+//             where:{
+//                 id:theatreId
+//             }
+//         });
+//         if(!checkTheatre){
+//             return res.status(400).json({
+//                 success:false,
+//                 message:"No theatre found with provided id"
+//             });
+//         }
+
+//         const seatCount=await seatRepo.count({
+//             where:{
+//                 theatre:{
+//                     id:checkTheatre.id
+//                 }
+//             }
+//         });
+
+//         const checkMovie=await movieRepo.findOne({
+//             where:{
+//                 id:movieId
+//             }
+//         });
+
+//         if(!checkMovie){
+//             return res.status(400).json({
+//                 success:false,
+//                 message:"No movie in database. Add it first"
+//             });
+//         }
+
+//         const existingShow=await showRepo.findOne({
+//             where:{
+//                 theatre:{
+//                     id:checkTheatre.id
+//                 },
+//                 showDate,
+//                 showStartTime: LessThan(showEndTime),
+//                 showEndTime: MoreThan(showStartTime),
+//             }
+//         });
+
+//         if(existingShow){
+//             return res.status(409).json({
+//                 success:false,
+//                 message:"A show is already scheduled at ths time"
+//             });
+//         }
+
+//         const showDetails={
+//             theatre:checkTheatre,
+//             movie:checkMovie,
+//             reg_Price,
+//             prem_Price,
+//             showDate,
+//             total_seat:seatCount,
+//             showStartTime,
+//             showEndTime,
+//             showName:name
+//         };
+//         const showData=await showRepo.save(showDetails);
+//         return res.status(201).json({
+//             success:true,
+//             message:"Show created successfully",
+//             data:showData
+//         });
+//     } catch (error) {
+//         if (error instanceof Error) {
+//             res.status(500).json({
+//                 success: false,
+//                 message: error.message || "internal server error",
+//             });
+//         }
+//     }
+// };
+
 export const createShow=async(req:RequestWithUser,res:Response)=>{
     try {
         if(!req.user){
@@ -394,7 +625,7 @@ export const createShow=async(req:RequestWithUser,res:Response)=>{
                 message:"you are not admin"
             });
         }
-        const {movieId,theatreId,reg_Price,prem_Price,name,showDate,showStartTime,showEndTime}=req.body;
+        const {movieId,theatreId,name,showDate,showStartTime,showEndTime}=req.body;
         if (!name || typeof name !== "string" || name.trim().length < 2) {
             return res.status(400).json({
                 success: false,
@@ -411,21 +642,6 @@ export const createShow=async(req:RequestWithUser,res:Response)=>{
             return res.status(400).json({
                 success: false,
                 message: "Provide a valid movie id"
-            });
-        }
-        if (
-            reg_Price === undefined || isNaN(Number(reg_Price)) || Number(reg_Price) <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Provide a regular seat price"
-            });
-        }
-
-        if (
-            prem_Price === undefined || isNaN(Number(prem_Price)) || Number(prem_Price) <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Provide a premium seat price"
             });
         }
 
@@ -485,12 +701,7 @@ export const createShow=async(req:RequestWithUser,res:Response)=>{
                 message: "End time must be after start time and overnight shows are not allowed"
             });
         }
-        if (Number(prem_Price) < Number(reg_Price)) {
-            return res.status(400).json({
-                success: false,
-                message: "Premium price cannot be less than regular price"
-            });
-        }
+        
         const today = new Date().toISOString().split("T")[0]!;
         if (showDate < today) {
             return res.status(400).json({
@@ -531,6 +742,17 @@ export const createShow=async(req:RequestWithUser,res:Response)=>{
                 message:"No movie in database. Add it first"
             });
         }
+        const start =
+    Number(showStartTime.split(":")[0]) * 60 +
+    Number(showStartTime.split(":")[1]);
+
+        const end =Number(showEndTime.split(":")[0]) * 60 +Number(showEndTime.split(":")[1]);
+        if (end < start + checkMovie.duration) {
+            return res.status(400).json({
+                success: false,
+                message: "End time is less than movie duration",
+            });
+        }
 
         const existingShow=await showRepo.findOne({
             where:{
@@ -553,8 +775,6 @@ export const createShow=async(req:RequestWithUser,res:Response)=>{
         const showDetails={
             theatre:checkTheatre,
             movie:checkMovie,
-            reg_Price,
-            prem_Price,
             showDate,
             total_seat:seatCount,
             showStartTime,
@@ -969,9 +1189,9 @@ export const adminDashboard = async (req: RequestWithUser,res: Response) => {
         let totalCollection = 0;
         for (const booking of bookings) {
             if (booking.seat.seatType === "Premium") {
-                totalCollection += booking.show.prem_Price;
+                totalCollection += booking.seat.price;
             } else {
-                totalCollection += booking.show.reg_Price;
+                totalCollection += booking.seat.price;
             }
         }
         return res.status(200).json({
